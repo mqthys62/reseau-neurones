@@ -13,6 +13,7 @@ import io
 import os
 import random
 from tkinter.simpledialog import askinteger
+from tkinter import filedialog
 
 # Définition des données d'entraînement
 # Codage des chiffres et lettres en matrice 7x5
@@ -527,6 +528,11 @@ class DigitRecognitionApp:
                                    value="pixel", command=self.change_drawing_mode)
         pixel_mode.pack(side="left")
         
+        # Ajouter après la ligne 506 (après la création de train_frame)
+        library_button = Button(train_frame, text="Charger Bibliothèque", 
+                               command=self.load_image_library, width=15, bg="#cc99ff")
+        library_button.grid(row=0, column=2, padx=5)
+        
         # Label pour afficher le résultat
         self.result_frame = Frame(right_frame, bd=2, relief="groove", padx=10, pady=10)
         self.result_frame.pack(fill="x", pady=10)
@@ -988,6 +994,7 @@ class DigitRecognitionApp:
         
         # Ajouter aux données d'entraînement avec un poids plus important
         # Ajouter plusieurs copies pour donner plus d'importance à cet exemple
+        char_count = 0
         for _ in range(5):  # Ajouter 5 copies
             self.X_train_base = np.append(self.X_train_base, [matrix], axis=0)
             self.y_train_base = np.append(self.y_train_base, [char_idx], axis=0)
@@ -1004,6 +1011,94 @@ class DigitRecognitionApp:
         # Option: réentraîner immédiatement
         if tk.messagebox.askyesno("Réentraîner", "Voulez-vous réentraîner le modèle maintenant?"):
             self.train_model()
+
+    def load_image_library(self):
+        """Charge une bibliothèque d'images organisée en dossiers par caractère"""
+        # Sélectionner le dossier principal de la bibliothèque
+        library_path = filedialog.askdirectory(title="Sélectionner le dossier de la bibliothèque d'images")
+        
+        if not library_path:
+            return
+        
+        try:
+            # Compteurs pour le suivi
+            total_added = 0
+            chars_added = []
+            
+            # Parcourir les sous-dossiers (un par caractère)
+            for char_folder in os.listdir(library_path):
+                folder_path = os.path.join(library_path, char_folder)
+                
+                # Vérifier que c'est un dossier et que le nom est valide
+                if not os.path.isdir(folder_path):
+                    continue
+                    
+                # Déterminer l'index du caractère
+                char_idx = None
+                if char_folder.isdigit() and len(char_folder) == 1:
+                    # C'est un chiffre de 0 à 9
+                    char_idx = int(char_folder)
+                elif len(char_folder) == 1 and 'A' <= char_folder.upper() <= 'Z':
+                    # C'est une lettre de A à Z
+                    char_idx = ord(char_folder.upper()) - ord('A') + 10
+                
+                if char_idx is None or char_idx >= 36:
+                    continue  # Caractère non pris en charge
+                    
+                # Compteur d'images pour ce caractère
+                char_count = 0
+                
+                # Parcourir les images dans ce dossier
+                for img_file in os.listdir(folder_path):
+                    if not img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                        continue
+                        
+                    img_path = os.path.join(folder_path, img_file)
+                    
+                    try:
+                        # Ouvrir et prétraiter l'image
+                        img = Image.open(img_path).convert('L')  # Niveaux de gris
+                        img = img.resize((5, 7), Image.LANCZOS)  # Redimensionner à 5x7
+                        
+                        # Convertir en tableau numpy et binariser
+                        img_array = np.array(img)
+                        # Inverser si nécessaire (fond blanc, caractère noir)
+                        if np.mean(img_array) > 128:
+                            img_array = 255 - img_array
+                        
+                        # Binariser avec seuil adaptatif
+                        threshold = np.mean(img_array) * 0.7
+                        matrix = (img_array > threshold).astype(np.int32)
+                        
+                        # Ajouter aux données d'entraînement
+                        self.X_train_base = np.append(self.X_train_base, [matrix], axis=0)
+                        self.y_train_base = np.append(self.y_train_base, [char_idx], axis=0)
+                        
+                        char_count += 1
+                        total_added += 1
+                        
+                    except Exception as e:
+                        print(f"Erreur lors du traitement de {img_path}: {e}")
+                
+                if char_count > 0:
+                    chars_added.append(f"{char_folder}({char_count})")
+            
+            # Rapport de chargement
+            if total_added > 0:
+                chars_text = ", ".join(chars_added)
+                self.add_to_history(f"Bibliothèque chargée: {total_added} images ({chars_text})")
+                
+                # Proposer l'entraînement
+                if tk.messagebox.askyesno("Entraînement", 
+                    f"{total_added} images ont été ajoutées. Voulez-vous entraîner le modèle maintenant?"):
+                    self.train_model()
+            else:
+                tk.messagebox.showinfo("Information", 
+                    "Aucune image valide n'a été trouvée dans la bibliothèque.")
+                
+        except Exception as e:
+            tk.messagebox.showerror("Erreur", 
+                f"Erreur lors du chargement de la bibliothèque: {str(e)}")
 
 # Exécution de l'application
 if __name__ == "__main__":
